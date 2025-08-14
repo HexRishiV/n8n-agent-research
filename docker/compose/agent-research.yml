@@ -1,0 +1,13 @@
+services:
+  agent-research:
+    build:
+      context: ../../app
+      dockerfile: Dockerfile
+    container_name: agent-research-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    networks:
+      - research-network
+    environment:
+      - PYTHONUNBUFFERED=1

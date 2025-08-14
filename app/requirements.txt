@@ -1,0 +1,7 @@
+beautifulsoup4
+webdriver-manager
+selenium
+random-user-agent
+
+fastapi
+uvicorn

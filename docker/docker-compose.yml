@@ -1,0 +1,21 @@
+name: agent-research
+
+include:
+  - ./compose/agent-research.yml
+  - ./compose/n8n.yml
+  - ./compose/ollama.yml
+  - ./compose/postgres.yml
+
+services: {}
+
+volumes:
+  postgres_data:
+    driver: local
+  n8n_data:
+    driver: local
+  ollama_data:
+    driver: local
+
+networks:
+  research-network:
+    driver: bridge
