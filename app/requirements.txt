@@ -1,7 +1,7 @@
-beautifulsoup4
-webdriver-manager
-selenium
-random-user-agent
-
 fastapi
 uvicorn
+pydantic
+llama-index
+llama-index-embeddings-huggingface
+sentence-transformers
+python-multipart

@@ -3,7 +3,7 @@ name: agent-research
 include:
   - ./compose/agent-research.yml
   - ./compose/n8n.yml
-  - ./compose/ollama.yml
+  # - ./compose/ollama.yml
   - ./compose/postgres.yml
 
 services: {}
