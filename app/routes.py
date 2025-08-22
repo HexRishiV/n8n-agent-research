@@ -1,8 +1,9 @@
 import os
 import json
+import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from llama_index.core import Document, VectorStoreIndex, StorageContext
@@ -50,7 +51,7 @@ def clean_llm_json_response(raw_text: str) -> List[Dict]:
         if json_match:
             json_text = json_match.group(0)
         
-        parsed_data = json.loads(json_text)
+        parsed_data = json.loads(json_text, strict=False)
         
         if isinstance(parsed_data, dict):
             parsed_data = [parsed_data]
@@ -59,17 +60,40 @@ def clean_llm_json_response(raw_text: str) -> List[Dict]:
             
         return parsed_data
         
+    except json.JSONDecodeError as e:
+        print(f"JSON decode error: {e}")
+        print(f"Raw text sample: {raw_text[:1000]}...")
+        
+        try:
+            import ast
+            parsed_data = ast.literal_eval(raw_text.strip())
+            
+            if isinstance(parsed_data, dict):
+                parsed_data = [parsed_data]
+            elif not isinstance(parsed_data, list):
+                raise ValueError("Not a valid array")
+                
+            return parsed_data
+            
+        except Exception as e2:
+            print(f"Alternative parsing also failed: {e2}")
+            return []
+        
     except Exception as e:
         print(f"Error cleaning JSON: {e}")
         print(f"Raw text: {raw_text[:500]}...")
         return []
 
 @router.post("/api/articles/organize-flexible")
-async def organize_articles_flexible(raw_data: Union[str, dict, list]):
+async def organize_articles_flexible(request: Request):
     """
-    Flexible endpoint that handles markdown-wrapped JSON from LLMs
+    Flexible endpoint that handles any input format from n8n
     """
     try:
+        raw_data = await request.json()
+        
+        print(f"Raw data received: {raw_data}")
+        
         base_dir = "saved_news"
         
         if not os.path.exists(base_dir):
@@ -77,21 +101,42 @@ async def organize_articles_flexible(raw_data: Union[str, dict, list]):
         
         articles_data = []
         
-        if isinstance(raw_data, str):
-            articles_data = clean_llm_json_response(raw_data)
-        elif isinstance(raw_data, list):
-            articles_data = raw_data
-        elif isinstance(raw_data, dict):
-            if "output" in raw_data:
-                output_text = raw_data["output"]
+        if isinstance(raw_data, dict) and "body" in raw_data:
+            actual_data = raw_data["body"].get("raw_data", raw_data["body"])
+            print(f"Extracted from body: {type(actual_data)} - {actual_data[:200] if isinstance(actual_data, str) else actual_data}")
+        elif isinstance(raw_data, dict) and "raw_data" in raw_data:
+            actual_data = raw_data["raw_data"]
+            print(f"Extracted from raw_data: {type(actual_data)} - {actual_data[:200] if isinstance(actual_data, str) else actual_data}")
+        else:
+            actual_data = raw_data
+            print(f"Using raw data directly: {type(actual_data)}")
+        
+        if isinstance(actual_data, str):
+            print("Processing as string - calling clean_llm_json_response")
+            articles_data = clean_llm_json_response(actual_data)
+            print(f"Cleaned articles count: {len(articles_data)}")
+        elif isinstance(actual_data, list):
+            print("Processing as list")
+            articles_data = actual_data
+        elif isinstance(actual_data, dict):
+            if "output" in actual_data:
+                print("Found 'output' key in dict")
+                output_text = actual_data["output"]
                 if isinstance(output_text, str):
+                    print("Output is string, cleaning...")
                     articles_data = clean_llm_json_response(output_text)
+                    print(f"Cleaned articles count: {len(articles_data)}")
                 else:
                     articles_data = output_text if isinstance(output_text, list) else [output_text]
-            elif "articles" in raw_data:
-                articles_data = raw_data["articles"]
+            elif "articles" in actual_data:
+                print("Found 'articles' key in dict")
+                articles_data = actual_data["articles"]
             else:
-                articles_data = [raw_data]
+                print("No recognized keys, treating whole dict as single article")
+                articles_data = [actual_data]
+        
+        print(f"Final articles_data count: {len(articles_data)}")
+        print(f"First article sample: {articles_data[0] if articles_data else 'None'}")
         
         if not articles_data:
             raise HTTPException(status_code=400, detail="No valid articles found in input")
@@ -99,7 +144,8 @@ async def organize_articles_flexible(raw_data: Union[str, dict, list]):
         organized_count = 0
         current_time = datetime.now().isoformat()
         
-        for article_data in articles_data:
+        for i, article_data in enumerate(articles_data):
+            print(f"Processing article {i+1}: {article_data.get('id', 'no-id')}")
             try:
                 article_id = article_data.get("id", f"auto_{abs(hash(str(article_data)))}")
                 
@@ -166,7 +212,7 @@ async def organize_articles_flexible(raw_data: Union[str, dict, list]):
                     organized_count += 1
                     
             except Exception as e:
-                print(f"Error processing article: {article_data}, Error: {e}")
+                print(f"Error processing article {i+1}: {article_data}, Error: {e}")
                 continue
         
         return {
@@ -177,8 +223,8 @@ async def organize_articles_flexible(raw_data: Union[str, dict, list]):
         }
         
     except Exception as e:
+        print(f"Full error: {e}")
         raise HTTPException(status_code=500, detail=f"Error organizing articles: {str(e)}")
-
 
 @router.post("/api/articles/organize")
 async def organize_articles(request: ArticlesRequest):
